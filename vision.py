@@ -4,6 +4,7 @@ from threading import Thread
 import cv2
 import imutils
 import time
+from networktables import NetworkTables
 
 class Camera:
   def __init__(self):
@@ -69,8 +70,18 @@ def findBoundingRects(contours, minWidth, maxWidth, minHeight, maxHeight):
     
 def distanceToTarget(targetWidth):
     return targetWidthTimesFocalLength / targetWidth
+
+def angleToTarget(targetX, targetWidth): #targetX is leftmost point    400 250
+  midpoint = targetX + targetWidth / 2         #525
+  angle = (midpoint - centerOfImage) * degreesPerPixel
+  return angle
+  
     
 videoStream = Camera().start()  # resolution found with    videoStream.camera.resolution[0]
+
+networkTablesServer = 'roborio-1987-frc.local'
+NetworkTables.initialize(server=networkTablesServer)
+visionTable = NetworkTables.getTable('SmartDashboard')
 
 hue = [50, 150]
 sat = [30, 255]
@@ -85,6 +96,10 @@ focalLength = (targetWidthInPixels*targetDistanceInInches)/targetWidthInInches
 #calculations that get re-used
 targetWidthTimesFocalLength = targetWidthInInches * focalLength
 
+horizontalFOV = 62.2
+degreesPerPixel = horizontalFOV / videoStream.camera.resolution[0]
+centerOfImage = videoStream.camera.resolution[0] / 2
+
 while videoStream.read() is None: #wait until videostream isn't empty
   time.sleep(0.1)
 
@@ -95,15 +110,19 @@ while True:
   filteredContours = filterContours(contours, 25, 600, 25, 400)
   boundingRects = findBoundingRects(filteredContours, 25, 600, 25, 400)
   distance = None
+  angle = None
   if len(boundingRects) > 0:
     distance = distanceToTarget(boundingRects[0][2]) #[0][2] is first width in boundingRects array, later change to find actual target. first number is rectangle index, second is width
-  
-  print(distance)
-  print(boundingRects) 
+    angle = angleToTarget(boundingRects[0][0], boundingRects[0][2])
+    visionTable.putNumber('angle', angle)
+    visionTable.putNumber('distance', distance)
+  print("Distance: ", distance, "     Angle: ", angle)
+  #print(boundingRects) 
+  #print(angle)
+  #print(distance)
   
   #cv2.imshow("HSV", filteredHSV)
   cv2.imshow("Contours", getContourImage(filteredHSV, filteredContours))
   #cv2.imshow("Frame", currentFrame)
   
-  key = cv2.waitKey(1) & 0xFF
-  
+  key = cv2.waitKey(1) & 0xFF 
