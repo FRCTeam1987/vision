@@ -9,6 +9,7 @@ from networktables import NetworkTables
 import datetime
 from datetime import timedelta
 from datetime import datetime
+import sys
 
 class Camera:
   def __init__(self):
@@ -63,7 +64,7 @@ def getContourImage(HSVImage, contours):
 def filterContours(contours, minWidth, maxWidth, minHeight, maxHeight):
     filteredContours = []
     for contour in contours:
-        x,y,w,h = cv2.boundingRect(contour)    #duplicate calculation?
+        x,y,w,h = cv2.boundingRect(contour)    #duplicate calculation?      no
         if w >= minWidth and w <= maxWidth and h >= minHeight and h <= maxHeight:
             filteredContours.append(contour)
     return filteredContours
@@ -116,7 +117,7 @@ val = [30, 255]
 
 #constants found by measuring target
 targetWidthInPixels = 190
-  =  1200
+heightInPixels  =  1200
 targetDistanceInInches = 136
 targetWidthInInches = 14
 targetHeightInInches = 88
@@ -129,6 +130,13 @@ horizontalFOV = 62.2
 verticalFOV = 48.8
 degreesPerPixel = horizontalFOV / videoStream.camera.resolution[0]
 centerOfImage = videoStream.camera.resolution[0] / 2
+
+arguments = sys.argv            #index 0 is name of file, 1 is debug parameter
+numOfArgs = len(arguments) 
+debugMode = False
+if numOfArgs > 1:
+  if arguments[1] == "debug": 
+    debugMode = True
 
 while videoStream.read() is None: #wait until videostream isn't empty
   time.sleep(0.1)
@@ -143,20 +151,22 @@ while True:
   distance = None
   angle = None
   if len(boundingRects) > 0:
-    #print("count: ", len(boundingRects))
-    cv2.imshow("Contours", getContourImage(filteredHSV, filteredContours))
     target = filterTargetRects(boundingRects)
     if target is not None:
       distance = distanceToTarget(target[1])
       angle = angleToTarget(target[0], target[2])
       timeDelta = time.perf_counter() - currentTimeStamp
-      print("target: ", target, ", angle: ", angle, ", distance: ", distance, "timedelta: ", timeDelta)
       visionTable.putNumber("timeStamp", currentTimeStamp)
       visionTable.putNumber('angle', angle)
       visionTable.putNumber('distance', distance)
   
-  #cv2.imshow("HSV", filteredHSV)
-  cv2.imshow("Contours", getContourImage(filteredHSV, filteredContours))
-  #cv2.imshow("Frame", currentFrame)
-  
+  if debugMode == True:
+    #cv2.imshow("HSV", filteredHSV)
+    cv2.imshow("Contours", getContourImage(filteredHSV, filteredContours))
+    #cv2.imshow("Frame", currentFrame)
+    try:
+      print("target: ", target, ", angle: ", angle, ", distance: ", distance, "timedelta: ", timeDelta)
+    except:
+      pass
+    
   key = cv2.waitKey(1) & 0xFF 
