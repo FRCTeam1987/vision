@@ -8,7 +8,7 @@ import math
 from networktables import NetworkTables
 import datetime
 from datetime import timedelta
-from datetime import datetime
+import time
 import sys
 
 class Camera:
@@ -104,7 +104,7 @@ def angleToTarget(targetX, targetWidth): #targetX is leftmost point    400 250
   angle = (midpoint - centerOfImage) * degreesPerPixel
   return angle
   
-YRes = 480    
+#YRes = 480    
 videoStream = Camera().start()  # resolution found with    videoStream.camera.resolution[0]
 
 networkTablesServer = 'roborio-1987-frc.local'
@@ -117,17 +117,17 @@ val = [30, 255]
 
 #constants found by measuring target
 targetWidthInPixels = 190
-heightInPixels  =  1200
+#heightInPixels  =  1200
 targetDistanceInInches = 136
 targetWidthInInches = 14
-targetHeightInInches = 88
+#targetHeightInInches = 88
 focalLength = (targetWidthInPixels*targetDistanceInInches)/targetWidthInInches
 
 #calculations that get re-used
-targetWidthTimesFocalLength = targetWidthInInches * focalLength
+#targetWidthTimesFocalLength = targetWidthInInches * focalLength
 
 horizontalFOV = 62.2
-verticalFOV = 48.8
+#verticalFOV = 48.8
 degreesPerPixel = horizontalFOV / videoStream.camera.resolution[0]
 centerOfImage = videoStream.camera.resolution[0] / 2
 
@@ -142,31 +142,38 @@ while videoStream.read() is None: #wait until videostream isn't empty
   time.sleep(0.1)
 
 while True:
+  startTime = time.time()
   currentFrame = videoStream.read()
   currentTimeStamp = videoStream.getTimeStamp()
   filteredHSV = getHSVImage(currentFrame, hue, sat, val)
   contours = findContours(filteredHSV)
   filteredContours = filterContours(contours, 25, 600, 25, 400)
-  boundingRects = findBoundingRects(filteredContours, 25, 600, 25, 400)
+  boundingRects = findBoundingRects(contours, 25, 600, 25, 400)
   distance = None
   angle = None
   if len(boundingRects) > 0:
     target = filterTargetRects(boundingRects)
+    visionTable.putBoolean('hasTarget', (target is not None)) 
     if target is not None:
       distance = distanceToTarget(target[1])
       angle = angleToTarget(target[0], target[2])
       timeDelta = time.perf_counter() - currentTimeStamp
-      visionTable.putNumber("timeStamp", currentTimeStamp)
+      visionTable.putNumber("timeDelta", timeDelta)
       visionTable.putNumber('angle', angle)
       visionTable.putNumber('distance', distance)
+  else:
+    visionTable.putBoolean('hasTarget', False)
   
   if debugMode == True:
     #cv2.imshow("HSV", filteredHSV)
     cv2.imshow("Contours", getContourImage(filteredHSV, filteredContours))
     #cv2.imshow("Frame", currentFrame)
-    try:
-      print("target: ", target, ", angle: ", angle, ", distance: ", distance, "timedelta: ", timeDelta)
-    except:
-      pass
-    
-  key = cv2.waitKey(1) & 0xFF 
+   #try:
+      #print("target: ", target, ", angle: ", angle, ", distance: ", distance, "timedelta: ", timeDelta)
+    #except:
+      #pass
+    endTime = time.time()
+    elapsedTime = endTime - startTime
+    fps = 1 / elapsedTime
+    print(fps)
+  key = cv2.waitKey(1) & 0xFF
