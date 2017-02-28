@@ -61,14 +61,6 @@ def findContours(HSVImage):
 def getContourImage(HSVImage, contours):
     return cv2.drawContours(HSVImage, contours, -1, (255, 255, 0), 4)
     
-def filterContours(contours, minWidth, maxWidth, minHeight, maxHeight):
-    filteredContours = []
-    for contour in contours:
-        x,y,w,h = cv2.boundingRect(contour)    #duplicate calculation?      no
-        if w >= minWidth and w <= maxWidth and h >= minHeight and h <= maxHeight:
-            filteredContours.append(contour)
-    return filteredContours
-    
 def findBoundingRects(contours, minWidth, maxWidth, minHeight, maxHeight):
     filteredRects = []
     for contour in contours:
@@ -102,6 +94,7 @@ def distanceToTarget(targetY):
 def angleToTarget(targetX, targetWidth): #targetX is leftmost point    400 250
   midpoint = targetX + targetWidth / 2         #525
   angle = (midpoint - centerOfImage) * degreesPerPixel
+  # print ("targetWidth: ", targetWidth)
   return angle
   
 #YRes = 480    
@@ -116,17 +109,19 @@ sat = [30, 255]
 val = [30, 255]
 
 #constants found by measuring target
-targetWidthInPixels = 190
+targetWidthInPixels = 144
 #heightInPixels  =  1200
-targetDistanceInInches = 136
-targetWidthInInches = 14
+targetDistanceInInches = 100
+targetWidthInInches = 15
 #targetHeightInInches = 88
 focalLength = (targetWidthInPixels*targetDistanceInInches)/targetWidthInInches
 
 #calculations that get re-used
 #targetWidthTimesFocalLength = targetWidthInInches * focalLength
 
-horizontalFOV = 62.2
+#horizontalFOV = 62.2
+#horizontalFOV = 2 * math.atan(targetWidthInPixels / (2 * focalLength));
+horizontalFOV = 20
 #verticalFOV = 48.8
 degreesPerPixel = horizontalFOV / videoStream.camera.resolution[0]
 centerOfImage = videoStream.camera.resolution[0] / 2
@@ -147,7 +142,6 @@ while True:
   currentTimeStamp = videoStream.getTimeStamp()
   filteredHSV = getHSVImage(currentFrame, hue, sat, val)
   contours = findContours(filteredHSV)
-  filteredContours = filterContours(contours, 25, 600, 25, 400)
   boundingRects = findBoundingRects(contours, 25, 600, 25, 400)
   distance = None
   angle = None
@@ -165,15 +159,11 @@ while True:
     visionTable.putBoolean('hasTarget', False)
   
   if debugMode == True:
-    #cv2.imshow("HSV", filteredHSV)
-    cv2.imshow("Contours", getContourImage(filteredHSV, filteredContours))
-    #cv2.imshow("Frame", currentFrame)
-   #try:
-      #print("target: ", target, ", angle: ", angle, ", distance: ", distance, "timedelta: ", timeDelta)
-    #except:
-      #pass
+    # cv2.imshow("HSV", filteredHSV)
+    cv2.imshow("RGB", currentFrame)
     endTime = time.time()
     elapsedTime = endTime - startTime
     fps = 1 / elapsedTime
-    print(fps)
+    print ("FPS: ", fps)
+    print ("Angle: ", angle)
   key = cv2.waitKey(1) & 0xFF
