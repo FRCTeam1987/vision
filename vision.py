@@ -10,11 +10,25 @@ import datetime
 from datetime import timedelta
 import time
 import sys
+import io
+#import serial
+import socket
+
+
+TCP_IP = '192.168.1.100'
+TCP_PORT = 5809
+BUFFER_SIZE = 100
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.bind((TCP_IP, TCP_PORT))
+s.listen(1)
+
+conn, addr = s.accept()
 
 class Camera:
   def __init__(self):
     self.camera = PiCamera()
-    self.camera.resolution = (640,480)
+    self.camera.resolution = (1260,720)
     self.camera.framerate = 60
     self.camera.shutter_speed = 500 #works better at 100 but lets in other light, lower = good for filtering
     self.camera.awb_mode = "off"
@@ -26,8 +40,10 @@ class Camera:
     self.camera.brightness = 50 #50 is default, this does nothing
     self.camera.hflip = True #use to change orientation of camera
     #self.camera.rotation = 180 #Use to change orientation of camera
-    self.camera.exposure_mode = "verylong" #other modes work, just not auto
+    #was previously spotlight but had to be changed because one LED is not bright enough
+    self.camera.exposure_mode = "fixedfps" #other modes work, just not auto spotlight fixedfps snow
     self.timeStamp = None
+
   def start(self):
     t = Thread(target = self.update, args = ())
     t.daemon = True
@@ -75,7 +91,17 @@ def getXMiddleOfRect(rect):
   return x + width / 2
 
 def filterTargetRects(rects):
-  xTolerance = 5
+  if len(rects) == 1:
+    print("found only one")
+    return rects[0]
+  if len(rects) > 1:
+    if rects[0][1] > rects[1][1]:
+      return rects[0]
+    else:
+      return rects[1]
+
+  # Code skipped
+  xTolerance = 100
   counter = 0
   while counter < len(rects):
     rectA = rects[counter]
@@ -83,87 +109,124 @@ def filterTargetRects(rects):
     while i < len(rects):
       rectB = rects[i]
       xDiff = math.fabs(getXMiddleOfRect(rectB) - getXMiddleOfRect(rectA))
+      # print("A,B = ", rectA, rectB)
       if xDiff <= xTolerance:
-        return rectA
+        if rectA[1] > rectB[1]:
+          return rectA
+        else:
+          return rectB
       i = i + 1
     counter = counter + 1
     
 def distanceToTarget(targetY):
-    return targetY #todo: need to implement
+    return .0002493 * targetY * targetY + .016 * targetY + 94.644 # Math!
+    # return targetY #todo: need to implement
 
 def angleToTarget(targetX, targetWidth): #targetX is leftmost point    400 250
   midpoint = targetX + targetWidth / 2         #525
   angle = (midpoint - centerOfImage) * degreesPerPixel
-  # print ("targetWidth: ", targetWidth)
   return angle
+
+
+def sendToRio(hasTarget, timeDelta=0.0, angle=0.0, distance=0.0):
+
+  if hasTarget == True:
+    hasTarget = 1
+  elif hasTarget == False:
+    hasTarget = 0
+  timeDelta = '%.4f'%timeDelta
+  angle = '%.4f'%angle
+  distance = '%.4f'%distance
+
+  targetInfo = (str(hasTarget) + " " + str(timeDelta) + " " + str(angle) + " " + str(distance))
+
+  conn.send(bytes(targetInfo, "utf-8")) 
+
   
-#YRes = 480    
-videoStream = Camera().start()  # resolution found with    videoStream.camera.resolution[0]
+try:
+  #YRes = 480    
+  videoStream = Camera().start()  # resolution found with    videoStream.camera.resolution[0]
 
-networkTablesServer = 'roborio-1987-frc.local'
-NetworkTables.initialize(server=networkTablesServer)
-visionTable = NetworkTables.getTable('SmartDashboard')
+  # networkTablesServer = 'roborio-1987-frc.local'
+  networkTablesServer = '10.19.87.2'
+  NetworkTables.initialize(server=networkTablesServer)
+  visionTable = NetworkTables.getTable('SmartDashboard')
 
-hue = [50, 150]
-sat = [30, 255]
-val = [30, 255]
 
-#constants found by measuring target
-targetWidthInPixels = 144
-#heightInPixels  =  1200
-targetDistanceInInches = 100
-targetWidthInInches = 15
-#targetHeightInInches = 88
-focalLength = (targetWidthInPixels*targetDistanceInInches)/targetWidthInInches
+  hue = [50, 75]
+  sat = [80, 255]
+  val = [30, 255]
 
-#calculations that get re-used
-#targetWidthTimesFocalLength = targetWidthInInches * focalLength
+  #constants found by measuring target
+  targetWidthInPixels = 144
+  #heightInPixels  =  1200
+  targetDistanceInInches = 100
+  targetWidthInInches = 15
+  #targetHeightInInches = 88
+  focalLength = (targetWidthInPixels*targetDistanceInInches)/targetWidthInInches
 
-#horizontalFOV = 62.2
-#horizontalFOV = 2 * math.atan(targetWidthInPixels / (2 * focalLength));
-horizontalFOV = 20
-#verticalFOV = 48.8
-degreesPerPixel = horizontalFOV / videoStream.camera.resolution[0]
-centerOfImage = videoStream.camera.resolution[0] / 2
+  #calculations that get re-used
+  #targetWidthTimesFocalLength = targetWidthInInches * focalLength
 
-arguments = sys.argv            #index 0 is name of file, 1 is debug parameter
-numOfArgs = len(arguments) 
-debugMode = False
-if numOfArgs > 1:
-  if arguments[1] == "debug": 
-    debugMode = True
+  #horizontalFOV = 62.2
+  #horizontalFOV = 2 * math.atan(targetWidthInPixels / (2 * focalLength));
+  horizontalFOV = 47.0
+  #verticalFOV = 48.8
+  degreesPerPixel = horizontalFOV / videoStream.camera.resolution[0]
+  centerOfImage = videoStream.camera.resolution[0] / 2
 
-while videoStream.read() is None: #wait until videostream isn't empty
-  time.sleep(0.1)
+  arguments = sys.argv            #index 0 is name of file, 1 is debug parameter
+  numOfArgs = len(arguments) 
+  debugMode = False
+  if numOfArgs > 1:
+    if arguments[1] == "debug": 
+      debugMode = True
 
-while True:
-  startTime = time.time()
-  currentFrame = videoStream.read()
-  currentTimeStamp = videoStream.getTimeStamp()
-  filteredHSV = getHSVImage(currentFrame, hue, sat, val)
-  contours = findContours(filteredHSV)
-  boundingRects = findBoundingRects(contours, 25, 600, 25, 400)
-  distance = None
-  angle = None
-  if len(boundingRects) > 0:
-    target = filterTargetRects(boundingRects)
-    visionTable.putBoolean('hasTarget', (target is not None)) 
-    if target is not None:
-      distance = distanceToTarget(target[1])
-      angle = angleToTarget(target[0], target[2])
-      timeDelta = time.perf_counter() - currentTimeStamp
-      visionTable.putNumber("timeDelta", timeDelta)
-      visionTable.putNumber('angle', angle)
-      visionTable.putNumber('distance', distance)
-  else:
-    visionTable.putBoolean('hasTarget', False)
-  
-  if debugMode == True:
-    # cv2.imshow("HSV", filteredHSV)
-    cv2.imshow("RGB", currentFrame)
-    endTime = time.time()
-    elapsedTime = endTime - startTime
-    fps = 1 / elapsedTime
-    print ("FPS: ", fps)
-    print ("Angle: ", angle)
-  key = cv2.waitKey(1) & 0xFF
+  while videoStream.read() is None: #wait until videostream isn't empty
+    time.sleep(0.1)
+
+  while True:
+    startTime = time.time()
+    currentFrame = videoStream.read()
+    currentTimeStamp = videoStream.getTimeStamp()
+    #smallerFrame = cv2.resize(currentFrame, None, fx=2, fy=2, interpolation=cv2.INTER_AREA)
+    filteredHSV = getHSVImage(currentFrame, hue, sat, val)
+    contours = findContours(filteredHSV)
+    boundingRects = findBoundingRects(contours, 40, 525, 20, 275)
+    distance = None
+    angle = None
+    if len(boundingRects) > 0:
+      target = filterTargetRects(boundingRects)
+      
+      
+      print(target)
+      if target is not None:
+        distance = distanceToTarget(target[1])
+        angle = angleToTarget(target[0], target[2])
+        timeDelta = time.perf_counter() - currentTimeStamp
+        sendToRio(target is not None, timeDelta, angle, distance)
+
+      else:
+        print("test")
+        visionTable.putBoolean('hasTarget', False)
+        sendToRio(False)
+    else:
+        print("test")
+        visionTable.putBoolean('hasTarget', False)
+        sendToRio(False)
+        
+    if debugMode == True:
+      cv2.imshow("HSV", filteredHSV)
+      # cv2.imshow("RGB", currentFrame)
+      cv2.imwrite("./images/HSVvision"+time.ctime()+".png", filteredHSV)
+      cv2.imwrite("./images/RGBvision"+time.ctime()+".png" , currentFrame)
+      endTime = time.time()
+      elapsedTime = endTime - startTime
+      fps = 1 / elapsedTime
+      print ("FPS: ", fps)
+      print ("Angle: ", angle)
+    key = cv2.waitKey(1) & 0xFF
+
+  conn.close()
+except (OSError, KeyboardInterrupt):
+  conn.close()
